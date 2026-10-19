@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { width: 360px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 14px; background: #f0f2f5; color: #1c1e21; font-size: 13px; }
+    h3 { margin: 0 0 12px 0; font-size: 15px; color: #1877f2; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #dddfe2; padding-bottom: 8px; }
+    .badge { font-size: 10px; background: #e7f0ff; color: #1877f2; padding: 2px 7px; border-radius: 10px; font-weight: normal; }
+    .tab-bar { display: flex; gap: 2px; background: #e4e6eb; border-radius: 8px; padding: 3px; margin-bottom: 12px; }
+    .tab-btn { flex: 1; padding: 5px; border: none; border-radius: 6px; background: transparent; cursor: pointer; font-size: 11px; font-weight: 600; color: #65676b; }
+    .tab-btn.active { background: #fff; color: #1877f2; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .form-group { margin-bottom: 9px; }
+    .form-group label { display: block; font-size: 11px; color: #65676b; margin-bottom: 3px; font-weight: 600; }
+    .input-eye { position: relative; }
+    .input-eye input { padding-right: 32px !important; }
+    .eye-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 14px; color: #8a8d91; padding: 0; }
+    .form-control { width: 100%; padding: 7px 9px; border: 1px solid #ced4da; border-radius: 6px; font-size: 12px; background: #fff; color: #000; }
+    .form-control:focus { border-color: #1877f2; outline: none; }
+    .tip { font-size: 10px; color: #8a8d91; margin-top: 2px; line-height: 1.4; }
+    .section-title { font-size: 12px; font-weight: bold; margin: 10px 0 7px 0; color: #1c1e21; }
+
+    /* OCR 额度卡片 */
+    .ocr-card { background: #fff; border: 1px solid #e4e6eb; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+    .ocr-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .ocr-title { font-size: 12px; font-weight: bold; color: #1c1e21; }
+    .ocr-reset { font-size: 10px; color: #1877f2; cursor: pointer; background: none; border: none; padding: 0; }
+    .ocr-reset:hover { text-decoration: underline; }
+    .ocr-bar-bg { height: 6px; background: #e4e6eb; border-radius: 3px; overflow: hidden; margin-bottom: 5px; }
+    .ocr-bar-fill { height: 100%; border-radius: 3px; background: #1877f2; transition: width 0.4s; }
+    .ocr-bar-fill.warn  { background: #f5a623; }
+    .ocr-bar-fill.danger{ background: #d93025; }
+    .ocr-stats { display: flex; justify-content: space-between; font-size: 10px; color: #65676b; }
+    .ocr-month { font-size: 10px; color: #8a8d91; margin-top: 2px; }
+
+    .toggle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+    .toggle-item { display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #e4e6eb; border-radius: 8px; padding: 7px 10px; }
+    .toggle-label { font-size: 11px; color: #1c1e21; font-weight: 500; }
+    .toggle-switch { position: relative; width: 32px; height: 18px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #ccc; border-radius: 18px; transition: 0.2s; }
+    .toggle-slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+    input:checked + .toggle-slider { background: #1877f2; }
+    input:checked + .toggle-slider:before { transform: translateX(14px); }
+    .layout-selector { display: flex; gap: 6px; }
+    .layout-btn { flex: 1; padding: 7px; border: 1.5px solid #dddfe2; border-radius: 8px; background: #fff; cursor: pointer; text-align: center; font-size: 11px; color: #65676b; }
+    .layout-btn.active { border-color: #1877f2; color: #1877f2; background: #e7f0ff; font-weight: bold; }
+    .layout-btn .icon { font-size: 18px; display: block; margin-bottom: 2px; }
+    .cat-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; min-height: 28px; }
+    .cat-tag { background: #e4e6eb; padding: 3px 8px; border-radius: 10px; font-size: 11px; display: flex; align-items: center; gap: 3px; }
+    .cat-del { cursor: pointer; color: #999; font-size: 13px; }
+    .cat-del:hover { color: #d93025; }
+    .cat-csv-row { display: flex; gap: 5px; margin-bottom: 8px; align-items: center; }
+    .btn-copy { background: transparent; border: 1px solid #1877f2; color: #1877f2; padding: 5px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+    .btn-copy:hover { background: #e7f0ff; }
+    .cat-add-row { display: flex; gap: 5px; }
+    .btn { padding: 7px 12px; border: none; border-radius: 6px; background: #1877f2; color: white; font-weight: bold; cursor: pointer; font-size: 12px; white-space: nowrap; }
+    .btn:hover { background: #166fe5; }
+    .export-area { width: 100%; height: 80px; padding: 7px; border: 1px solid #ced4da; border-radius: 6px; font-size: 11px; font-family: monospace; background: #fff; resize: none; }
+    .btn-row { display: flex; gap: 6px; margin-top: 6px; }
+    .btn-sm { flex: 1; padding: 7px; border: none; border-radius: 6px; background: #1877f2; color: #fff; font-weight: bold; cursor: pointer; font-size: 12px; }
+    .btn-sm:hover { background: #166fe5; }
+    .btn-sm.sec { background: #e4e6eb; color: #050505; }
+    .btn-sm.sec:hover { background: #d8dadf; }
+    .btn-sm.green { background: #24b263; }
+    .btn-sm.green:hover { background: #1e9651; }
+    .btn-sm.red { background: #fa3e3e; }
+    #status-msg { font-size: 11px; text-align: center; font-weight: bold; margin-top: 6px; min-height: 16px; }
+    .footer { font-size: 10px; text-align: center; color: #8a8d91; border-top: 1px solid #dddfe2; padding-top: 8px; margin-top: 10px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <h3>
+    <span>📸 智能截图助手</span>
+    <span class="badge">Pro v2.1</span>
+  </h3>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="config">⚙️ 配置</button>
+    <button class="tab-btn" data-tab="ocr">🔍 OCR/AI</button>
+    <button class="tab-btn" data-tab="options">🎛️ 选项</button>
+    <button class="tab-btn" data-tab="cats">🏷️ 分类</button>
+    <button class="tab-btn" data-tab="export">📦 导出</button>
+  </div>
+
+  <!-- 基础配置 -->
+  <div class="tab-panel active" id="tab-config">
+    <div class="form-group">
+      <label>GAS 部署链接（Web App URL）</label>
+      <input type="text" id="gas-url" class="form-control" placeholder="https://script.google.com/macros/s/...">
+      <div class="tip">⚡ 配置实时保存，切屏复制也不会丢失</div>
+    </div>
+    <div class="form-group">
+      <label>谷歌表格 ID 或完整链接</label>
+      <input type="text" id="sheet-id" class="form-control" placeholder="可直接粘贴表格的完整网页链接">
+    </div>
+    <div class="form-group">
+      <label>写入的 Sheet 名称（留空用第一个）</label>
+      <input type="text" id="sheet-name" class="form-control" placeholder="如：Sheet1、素材库（区分大小写）">
+    </div>
+    <div class="form-group">
+      <label>谷歌网盘根文件夹 ID 或完整链接</label>
+      <input type="text" id="folder-id" class="form-control" placeholder="可直接粘贴网盘文件夹的完整链接">
+    </div>
+  </div>
+
+  <!-- OCR 配置 -->
+  <div class="tab-panel" id="tab-ocr">
+
+    <div class="tip" style="margin-bottom:10px;color:#1c1e21;">
+      数据去向：OCR 图片发送至 OCR.Space；视频音频发送至 Groq；识别文字发送至 Groq 或 Google 翻译。请避免提交敏感内容。API Key 保存在本机扩展配置中，导出配置不包含 Key。
+    </div>
+
+    <div class="form-group">
+      <label>OCR.Space API Key（识别文字）</label>
+      <div class="input-eye">
+        <input type="password" id="vision-key" class="form-control" placeholder="K_xxxxxx 或留空使用免费公共Key">
+        <button class="eye-btn" id="eye-btn" title="显示/隐藏">👁️</button>
+      </div>
+      <div class="tip">
+        <b>无需填写也可直接使用！</b>留空时自动使用公共测试 Key（<b>helloworld</b>），额度为共享池，够日常测试。<br>
+        想要独享额度请注册免费 Key：<b>ocr.space/ocrapi/freekey</b>，每月 25,000 次。
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>免费额度上限（次/月）</label>
+      <input type="number" id="ocr-limit" class="form-control" placeholder="25000" min="1" max="999999" value="25000">
+      <div class="tip">免费账号默认 25,000 次/月；公共测试 Key 额度共享，建议注册自己的</div>
+    </div>
+
+    <!-- 用量卡片 -->
+    <div class="ocr-card">
+      <div class="ocr-card-top">
+        <span class="ocr-title">📊 本月使用情况</span>
+        <button class="ocr-reset" id="ocr-reset-btn">重置计数</button>
+      </div>
+      <div class="ocr-bar-bg">
+        <div class="ocr-bar-fill" id="ocr-bar" style="width:0%"></div>
+      </div>
+      <div class="ocr-stats">
+        <span id="ocr-used-text">已用 0 次</span>
+        <span id="ocr-remain-text">剩余 1000 次</span>
+      </div>
+      <div class="ocr-month" id="ocr-month-text"></div>
+    </div>
+
+    <div class="tip" style="background:#e7f0ff;padding:8px;border-radius:6px;color:#1c1e21;">
+      💡 截图时勾选「识别文字」，识别结果会自动填入备注栏，也可手动编辑后再上传。支持英、法、西、葡等 100+ 语言。
+    </div>
+
+    <div class="section-title" style="margin-top:10px;">🎙️ Groq AI Key（支持 AI 翻译 + 视频语音转台词）</div>
+    <div class="form-group">
+      <div class="input-eye">
+        <input type="password" id="groq-key" class="form-control" placeholder="gsk_...">
+        <button class="eye-btn" id="groq-eye-btn" title="显示/隐藏">👁️</button>
+      </div>
+      <div class="tip">
+        填入 Groq Key 后：<br>
+        1. <b>AI 语音转文字</b>：一键提取视频里的语音台词（基于 Whisper Large v3，极速精准）。<br>
+        2. <b>AI 高质量翻译</b>：OCR 文字自动翻译为地道中文。<br>
+        永久免费申请：<b>console.groq.com → API Keys</b>（格式：<code>gsk_...</code>）
+      </div>
+    </div>
+  </div>
+
+  <!-- 功能选项 -->
+  <div class="tab-panel" id="tab-options">
+    <div class="section-title">📋 表格写入字段</div>
+    <div class="toggle-grid">
+      <div class="toggle-item"><span class="toggle-label">📥 下载链接</span><label class="toggle-switch"><input type="checkbox" id="opt-download" checked><span class="toggle-slider"></span></label></div>
+      <div class="toggle-item"><span class="toggle-label">📂 打开位置</span><label class="toggle-switch"><input type="checkbox" id="opt-folder" checked><span class="toggle-slider"></span></label></div>
+      <div class="toggle-item"><span class="toggle-label">📝 备注栏</span><label class="toggle-switch"><input type="checkbox" id="opt-notes" checked><span class="toggle-slider"></span></label></div>
+      <div class="toggle-item"><span class="toggle-label">🔗 来源链接</span><label class="toggle-switch"><input type="checkbox" id="opt-url" checked><span class="toggle-slider"></span></label></div>
+    </div>
+    <div class="section-title" style="margin-top:12px;">📐 排列方向</div>
+    <div class="layout-selector">
+      <button class="layout-btn active" id="layout-horizontal" data-layout="horizontal">
+        <span class="icon">➡️</span>横排
+        <div style="font-size:10px;color:#8a8d91;margin-top:2px;">新内容从左插入</div>
+      </button>
+      <button class="layout-btn" id="layout-vertical" data-layout="vertical">
+        <span class="icon">⬇️</span>竖排
+        <div style="font-size:10px;color:#8a8d91;margin-top:2px;">新内容从上插入</div>
+      </button>
+    </div>
+    <div class="tip" style="margin-top:6px;">横排：同一分类数据左右扩展；竖排：新数据从上堆叠，旧数据自动下移</div>
+    <div class="section-title" style="margin-top:12px;">🏷️ 分类默认模式</div>
+    <div class="toggle-grid">
+      <div class="toggle-item">
+        <span class="toggle-label">📅 默认按今天日期</span>
+        <label class="toggle-switch"><input type="checkbox" id="opt-cat-date" checked><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+    <div class="tip">开启：截图弹窗默认选今天日期为分类（按日期归档）。关闭：默认使用上次选过的分类（按项目/主题归档）</div>
+    <div class="section-title" style="margin-top:12px;">🔍 OCR 设置</div>
+    <div class="toggle-grid">
+      <div class="toggle-item">
+        <span class="toggle-label">🔍 默认勾选识别</span>
+        <label class="toggle-switch"><input type="checkbox" id="opt-ocr-auto" checked><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:12px;">🎙️ 语音提取时长上限</div>
+    <div class="form-group" style="margin-bottom:6px;">
+      <select id="opt-speech-duration" class="form-control" style="font-size:12px;padding:6px;">
+        <option value="15">15 秒（短视频金句）</option>
+        <option value="30">30 秒（短视频/Reels）</option>
+        <option value="60" selected>60 秒（1 分钟，推荐）</option>
+        <option value="120">120 秒（2 分钟）</option>
+        <option value="300">300 秒（5 分钟，完整视频）</option>
+      </select>
+    </div>
+    <div class="tip">录制中可随时点击「⏹️ 立即识别」提前结束；视频播放结束也会自动触发识别。</div>
+    <div class="tip">开启后，截图弹窗打开时自动勾选并立即开始 OCR 识别</div>
+  </div>
+
+  <!-- 分类管理 -->
+  <div class="tab-panel" id="tab-cats">
+    <div class="section-title">🏷️ 分类标签库</div>
+    <div class="cat-tags" id="cat-container"></div>
+    <div class="cat-csv-row">
+      <input type="text" id="cat-csv" class="form-control" readonly style="font-size:11px;color:#555;flex:1;">
+      <button class="btn-copy" id="copy-cats-btn">复制</button>
+    </div>
+    <div class="cat-add-row">
+      <input type="text" id="new-cat-input" class="form-control" placeholder="输入新分类名称">
+      <button class="btn" id="add-cat-btn">➕ 新增</button>
+    </div>
+  </div>
+
+  <!-- 导出配置 -->
+  <div class="tab-panel" id="tab-export">
+    <div class="section-title">📤 导出配置（分享给好友）</div>
+    <div class="tip" style="margin-bottom:8px;">导出 JSON 后发给好友，好友粘贴进来点「应用」即可同步配置。<br>注意：Vision API Key 不会包含在导出中，需各自填写自己的 Key。</div>
+    <div class="btn-row" style="margin-bottom:8px;">
+      <button class="btn-sm" id="export-btn">生成配置</button>
+      <button class="btn-sm green" id="copy-config-btn">⚡ 复制配置</button>
+    </div>
+    <textarea class="export-area" id="export-area" placeholder="点击「生成配置」后 JSON 会显示在这里..." readonly></textarea>
+    <div class="section-title" style="margin-top:10px;">📥 导入配置</div>
+    <textarea class="export-area" id="import-area" placeholder="将好友发来的配置 JSON 粘贴到这里，点「应用配置」..."></textarea>
+    <div class="btn-row">
+      <button class="btn-sm sec" id="clear-import-btn">清空</button>
+      <button class="btn-sm red" id="import-btn">⚡ 应用配置</button>
+    </div>
+  </div>
+
+  <div id="status-msg"></div>
+  <div class="footer">
+    💡 支持平台：Facebook · YouTube · Instagram · TikTok<br>
+    Pinterest · Behance · Dribbble · Flickr<br>
+    <b>更换配置后请刷新目标网页</b>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
