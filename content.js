@@ -58,7 +58,7 @@ function createBarBtn(icon, tip, handler) {
   tooltip.className = "fbs-tooltip";
   tooltip.textContent = tip;
   btn.appendChild(tooltip);
-  btn.addEventListener("click", event => { if (event.isTrusted) handler(); });
+  btn.addEventListener("click", handler);
   return btn;
 }
 
@@ -117,16 +117,16 @@ function getVideoSpeechKey() {
                     /\/reel\/([\w-]+)/, /\/p\/([\w-]+)/, /\/pin\/(\d+)/];
   for (const p of patterns) {
     const m = url.match(p);
-    if (m) return "stt_v2_" + encodeURIComponent(location.origin) + "_" + m[1];
+    if (m) return "stt_" + m[1];
   }
   const clean = url.split("?")[0].split("#")[0].replace(/\/$/, "");
-  return "stt_v2_" + encodeURIComponent(clean);
+  return "stt_" + clean.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 100);
 }
 
 // 统一获取或提取视频台词（优先直接调用缓存）
 function getOrExtractSpeech(callback, forceRefresh) {
   const cacheKey = getVideoSpeechKey();
-  chrome.storage.local.get([cacheKey, "speechDuration"], async (d) => {
+  chrome.storage.local.get([cacheKey, "groqKey", "speechDuration"], async (d) => {
     // 1. 如果已有台词缓存且不强制刷新，直接调用！不发起二次提取
     if (!forceRefresh && d[cacheKey] && d[cacheKey].text) {
       callback(d[cacheKey], true);
@@ -134,9 +134,8 @@ function getOrExtractSpeech(callback, forceRefresh) {
     }
 
     // 2. 无缓存时开始提取
-    const aiConfig = await new Promise(resolve =>
-      chrome.runtime.sendMessage({ action: "getAIConfig" }, resolve));
-    if (!aiConfig?.hasGroqKey) {
+    const groqKey = (d.groqKey || "").trim();
+    if (!groqKey) {
       showToast("⚠️ 请先在插件「🔍 OCR/AI」标签页填写 Groq Key", "#d93025");
       callback(null, false);
       return;
@@ -149,7 +148,7 @@ function getOrExtractSpeech(callback, forceRefresh) {
       return;
     }
 
-    const maxSeconds = [15, 30, 60, 120, 300].includes(d.speechDuration) ? d.speechDuration : 60;
+    const maxSeconds = parseInt(d.speechDuration) || 60;
 
     // 录音悬浮控制条
     let recordBar = document.getElementById("fbs-record-bar");
@@ -207,7 +206,8 @@ function getOrExtractSpeech(callback, forceRefresh) {
         chrome.runtime.sendMessage({
           action: "transcribeAudio",
           audioBase64,
-          mimeType: audioBlob.type || "audio/webm"
+          mimeType: audioBlob.type || "audio/webm",
+          groqKey
         }, (sttRes) => {
           if (!sttRes || !sttRes.success || !sttRes.text) {
             recordBar.remove();
@@ -219,7 +219,8 @@ function getOrExtractSpeech(callback, forceRefresh) {
           if (txt) txt.textContent = "🔄 正在翻译为中文...";
           chrome.runtime.sendMessage({
             action: "translateText",
-            text: sttRes.text
+            text: sttRes.text,
+            groqKey
           }, (trRes) => {
             recordBar.remove();
             const zh = (trRes && trRes.success && trRes.zh) ? trRes.zh : "";
@@ -269,7 +270,6 @@ async function recordVideoAudio(video, maxSeconds, onProgress, registerStop) {
   } catch(e) {}
 
   let audioStream = null;
-  let playbackContext = null;
   if (stream && stream.getAudioTracks().length > 0) {
     audioStream = new MediaStream(stream.getAudioTracks());
   }
@@ -293,9 +293,9 @@ async function recordVideoAudio(video, maxSeconds, onProgress, registerStop) {
           audioStream = tabStream;
           isTabCapture = true;
           try {
-            playbackContext = new AudioContext();
-            const src = playbackContext.createMediaStreamSource(tabStream);
-            src.connect(playbackContext.destination);
+            const ctx = new AudioContext();
+            const src = ctx.createMediaStreamSource(tabStream);
+            src.connect(ctx.destination);
           } catch(e) {}
         }
       }
@@ -303,15 +303,8 @@ async function recordVideoAudio(video, maxSeconds, onProgress, registerStop) {
   }
 
   if (!audioStream) {
-    if (stream) stream.getTracks().forEach(track => track.stop());
     throw new Error("未能捕获到视频音轨，请确保视频正在播放并有声音");
   }
-
-  const releaseCapture = () => {
-    new Set([...(stream ? stream.getTracks() : []), ...audioStream.getTracks()])
-      .forEach(track => track.stop());
-    if (playbackContext) playbackContext.close().catch(() => {});
-  };
 
   // 对 captureStream 音轨启用加速（tabCapture 无法加速，保持原速）
   if (!isTabCapture) {
@@ -336,7 +329,7 @@ async function recordVideoAudio(video, maxSeconds, onProgress, registerStop) {
       try {
         recorder = new MediaRecorder(audioStream);
       } catch(err2) {
-        releaseCapture();
+        audioStream.getTracks().forEach(t => t.stop());
         restoreVideo();
         return reject(new Error("浏览器不支持当前音频格式录制"));
       }
@@ -368,7 +361,7 @@ async function recordVideoAudio(video, maxSeconds, onProgress, registerStop) {
     if (registerStop) registerStop(stop);
 
     recorder.onstop = () => {
-      releaseCapture();
+      audioStream.getTracks().forEach(t => t.stop());
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
       resolve(blob);
     };
@@ -376,7 +369,7 @@ async function recordVideoAudio(video, maxSeconds, onProgress, registerStop) {
     recorder.onerror = err => {
       video.removeEventListener("ended", onVideoEnded);
       if (timer) clearInterval(timer);
-      releaseCapture();
+      audioStream.getTracks().forEach(t => t.stop());
       restoreVideo();
       reject(err);
     };
@@ -384,15 +377,7 @@ async function recordVideoAudio(video, maxSeconds, onProgress, registerStop) {
     // 监听视频结束事件：若视频在中途播完，直接结束录音无需傻等
     video.addEventListener("ended", onVideoEnded);
 
-    try {
-      recorder.start(500);
-    } catch (error) {
-      video.removeEventListener("ended", onVideoEnded);
-      releaseCapture();
-      restoreVideo();
-      reject(error);
-      return;
-    }
+    recorder.start(500);
     if (video.paused) video.play().catch(() => {});
 
     // 计时器以实际 wall-clock 秒为准；加速下内容时长 = elapsed * SPEED
@@ -417,11 +402,6 @@ function handleSpeechRecognition() {
 }
 
 // 展示语音台词卡片
-function escapeHTML(value) {
-  return String(value).replace(/[&<>"']/g, ch =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
-}
-
 function showSpeechModal(data, fromCache) {
   const existing = document.getElementById("fbs-speech-modal");
   if (existing) existing.remove();
@@ -448,8 +428,10 @@ function showSpeechModal(data, fromCache) {
     slovenian: "🇸🇮 斯洛文尼亚语", afrikaans: "🇿🇦 南非荷兰语",
   };
   const langCode = (data.language || "").toLowerCase().trim();
-  const langLabel = Object.hasOwn(LANG_MAP, langCode) ? LANG_MAP[langCode] : (langCode ? `🌐 ${langCode}` : "");
+  const langLabel = LANG_MAP[langCode] || (langCode ? `🌐 ${langCode}` : "");
 
+  const zhPart = data.zh ? `🇨🇳 <b>中文翻译：</b>\n${data.zh}\n\n` : "";
+  const enPart = `🔤 <b>原文台词：</b>\n${data.text}`;
   const fullText = (data.zh ? data.zh + "\n----------\n" : "") + data.text;
 
   modal.innerHTML = `
@@ -461,9 +443,9 @@ function showSpeechModal(data, fromCache) {
       <div style="font-size:11px;color:${fromCache ? "#24b263" : "#1877f2"};font-weight:600;">
         ${fromCache ? "⚡ 已直接读取本地台词缓存（无需重复提取）" : "✅ 语音提取与翻译完成"}
       </div>
-      ${langLabel ? `<div style="font-size:12px;background:#f0f2f5;border-radius:10px;padding:2px 10px;color:#1c1e21;font-weight:600;">${escapeHTML(langLabel)}</div>` : ""}
+      ${langLabel ? `<div style="font-size:12px;background:#f0f2f5;border-radius:10px;padding:2px 10px;color:#1c1e21;font-weight:600;">${langLabel}</div>` : ""}
     </div>
-    <div class="fbs-speech-content" id="fbs-speech-text-box"></div>
+    <div class="fbs-speech-content" id="fbs-speech-text-box">${zhPart + enPart}</div>
     <div style="display:flex;gap:8px;margin-top:12px;">
       <button class="fbs-btn fbs-btn-sec" style="flex:1;" id="fbs-speech-copy">📋 复制全部</button>
       <button class="fbs-btn fbs-btn-sec" style="flex:1;" id="fbs-speech-reextract">🔄 重新提取</button>
@@ -471,8 +453,6 @@ function showSpeechModal(data, fromCache) {
     </div>
   `;
 
-  modal.querySelector("#fbs-speech-text-box").textContent =
-    (data.zh ? "🇨🇳 中文翻译：\n" + data.zh + "\n\n" : "") + "🔤 原文台词：\n" + data.text;
   document.body.appendChild(modal);
 
   document.getElementById("fbs-speech-close").onclick = () => modal.remove();
@@ -483,8 +463,7 @@ function showSpeechModal(data, fromCache) {
     });
   };
   // 重新提取：清除缓存并强制重新提取
-  document.getElementById("fbs-speech-reextract").onclick = event => {
-    if (!event.isTrusted) return;
+  document.getElementById("fbs-speech-reextract").onclick = () => {
     const cacheKey = getVideoSpeechKey();
     chrome.storage.local.remove(cacheKey, () => {
       modal.remove();
@@ -519,12 +498,10 @@ function handleAreaCapture() {
 
   let sx = 0, sy = 0, drawing = false;
   overlay.addEventListener("mousedown", e => {
-    if (!e.isTrusted) return;
     drawing = true; sx = e.clientX; sy = e.clientY;
     box.style.cssText = "display:block;left:"+sx+"px;top:"+sy+"px;width:0;height:0;";
   });
   overlay.addEventListener("mousemove", e => {
-    if (!e.isTrusted) return;
     if (!drawing) return;
     box.style.width  = Math.abs(e.clientX - sx) + "px";
     box.style.height = Math.abs(e.clientY - sy) + "px";
@@ -532,7 +509,6 @@ function handleAreaCapture() {
     box.style.top    = Math.min(e.clientY, sy) + "px";
   });
   overlay.addEventListener("mouseup", e => {
-    if (!e.isTrusted) return;
     if (!drawing) return; drawing = false;
     const rect = { x: Math.min(sx, e.clientX), y: Math.min(sy, e.clientY),
                    width: Math.abs(sx - e.clientX), height: Math.abs(sy - e.clientY) };
@@ -592,7 +568,7 @@ function showSaveModal(base64, info, captureAgain) {
   // 标题栏
   const titleBar = document.createElement("div");
   titleBar.className = "fbs-modal-title";
-  titleBar.textContent = "💡 截图保存 · " + (info.platform || "Web");
+  titleBar.innerHTML = "<span>💡 截图保存 · " + (info.platform || "Web") + "</span>";
   const closeBtn = document.createElement("span");
   closeBtn.className = "fbs-modal-close";
   closeBtn.innerHTML = "&times;";
@@ -677,7 +653,7 @@ function showSaveModal(base64, info, captureAgain) {
 
   // 根据 optNotes 开关决定是否显示备注框
   chrome.storage.local.get(["optNotes", "categories", "lastSelectedCategory", "catDateMode",
-    "ocrUsed", "ocrLimit", "ocrMonth", "ocrAutoCheck"], (data) => {
+    "visionKey", "ocrUsed", "ocrLimit", "ocrMonth", "ocrAutoCheck", "groqKey"], (data) => {
     if (data.optNotes !== false) {
       modal.appendChild(notesLabel);
 
@@ -689,13 +665,14 @@ function showSaveModal(base64, info, captureAgain) {
 
       if (used < limit) {
         modal.appendChild(ocrRow);
-        const runOCR = () => {
+        ocrCheck.addEventListener("change", () => {
           if (!ocrCheck.checked) { ocrLbl.textContent = "🔍 识别图片文字（自动填入备注）"; return; }
           ocrSpin.style.display = "inline";
           ocrCheck.disabled = true;
-          // API Key 仅在 background.js 中读取，未配置时使用公开测试 Key
+          // 无 Key 时传空字符串，background.js 会自动 fallback 到 helloworld
+          const apiKey = (data.visionKey && data.visionKey.trim()) ? data.visionKey.trim() : "";
           chrome.runtime.sendMessage({
-            action: "recognizeText", imageBase64: base64
+            action: "recognizeText", imageBase64: base64, apiKey
           }, (res) => {
             ocrSpin.style.display = "none";
             ocrCheck.disabled = false;
@@ -704,9 +681,10 @@ function showSaveModal(base64, info, captureAgain) {
                 ocrLbl.textContent = "🔍 未识别到文字";
               } else {
                 notesText.value = res.text;
+                const groqKey = (data.groqKey || "").trim();
                 // 总是尝试翻译：无 Key → Google Translate（免费），有 Key → Groq（AI 翻译）
                 ocrLbl.textContent = "🔄 翻译中...";
-                chrome.runtime.sendMessage({ action: "translateText", text: res.text }, (tr) => {
+                chrome.runtime.sendMessage({ action: "translateText", text: res.text, groqKey }, (tr) => {
                   if (tr && tr.success && tr.zh) {
                     notesText.value = tr.zh + "\n----------\n" + res.text;
                     ocrLbl.textContent = "✅ 识别+翻译完成（本月剩余 " + res.ocrRemain + " 次）";
@@ -721,12 +699,11 @@ function showSaveModal(base64, info, captureAgain) {
               ocrCheck.checked   = false;
             }
           });
-        };
-        ocrCheck.addEventListener("change", event => { if (event.isTrusted) runOCR(); });
+        });
         // 默认勾选 OCR 并自动触发识别（可在「选项」中关闭）
         if (data.ocrAutoCheck !== false) {
           ocrCheck.checked = true;
-          runOCR();
+          ocrCheck.dispatchEvent(new Event("change"));
         }
       } else {
         const tip = document.createElement("div");
@@ -754,8 +731,7 @@ function showSaveModal(base64, info, captureAgain) {
         }
       });
 
-      speechBtn.addEventListener("click", event => {
-        if (!event.isTrusted) return;
+      speechBtn.addEventListener("click", () => {
         speechBtn.disabled = true;
         const origText = speechBtn.textContent;
         speechBtn.textContent = "⏳ 正在提取...";
@@ -834,7 +810,6 @@ function showSaveModal(base64, info, captureAgain) {
       const val = prompt("请输入新分类名称：");
       if (!val || !val.trim()) return;
       const trimmed = val.trim();
-      if (trimmed.length > 200 || /[|\r\n]/.test(trimmed)) { alert("分类最长 200 字，不能包含换行或竖线"); return; }
       chrome.storage.local.get(["categories"], d => {
         let l = d.categories || [];
         if (!l.includes(trimmed)) l.push(trimmed);
@@ -852,7 +827,7 @@ function showSaveModal(base64, info, captureAgain) {
   function buildPayload(cb) {
     chrome.storage.local.get(
       ["gasUrl", "sheetId", "folderId", "sheetName", "optDownload", "optFolder",
-       "optNotes", "optUrl", "layoutMode"], (cfg) => {
+       "optNotes", "optUrl", "layoutMode", "serviceAccount"], (cfg) => {
       if (!cfg.gasUrl) {
         cb(null, null, "❌ 请在插件弹窗「配置」标签填写 GAS 部署链接");
         return;
@@ -899,7 +874,8 @@ function showSaveModal(base64, info, captureAgain) {
         optFolder:   cfg.optFolder   !== false,
         optNotes:    cfg.optNotes    !== false,
         optUrl:      cfg.optUrl      !== false,
-        layoutMode:  cfg.layoutMode  || "horizontal"
+        layoutMode:  cfg.layoutMode  || "horizontal",
+        serviceAccount: cfg.serviceAccount || null
       }, cfg.gasUrl, null);
     });
   }
@@ -912,8 +888,7 @@ function showSaveModal(base64, info, captureAgain) {
     });
   }
 
-  submitBtn.addEventListener("click", event => {
-    if (!event.isTrusted) return;
+  submitBtn.addEventListener("click", () => {
     stateDiv.style.display = "block";
     stateDiv.style.color   = "#1877f2";
     stateDiv.textContent   = "⏳ 正在上传到谷歌网盘...";
@@ -928,8 +903,7 @@ function showSaveModal(base64, info, captureAgain) {
     });
   });
 
-  continueBtn.addEventListener("click", event => {
-    if (!event.isTrusted) return;
+  continueBtn.addEventListener("click", () => {
     buildPayload((payload, gasUrl, err) => {
       if (err) { alert(err); return; }
       modal.remove();

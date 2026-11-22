@@ -1,111 +1,126 @@
-# 智能截图助手 Pro
+# 📸 智能截图助手 Pro v2.2
 
-Chrome Manifest V3 扩展：截取视频画面或框选区域，保存到 Google Drive，并将分类、备注、来源和图片链接写入 Google Sheets。支持 OCR、视频语音转文字及中文翻译。
+> 一款专为自媒体、运营与研究人员打造的高效素材采集神器：支持多平台一键视频截图、自由框选、台词语音识别 (Whisper)、图片文字提取 (OCR)、AI 智能翻译，自动归类上传至 Google Drive 并实时同步至 Google Sheets（全面支持 GCP 服务账号凭据，在受限表格与网盘下畅通无阻）。
 
-> **使用边界：当前版本仍存在 GAS 匿名访问和图片公开分享两项 High 风险，不适合处理敏感截图。** 这些行为按本轮开发者选择保留，具体见 [SECURITY.md](SECURITY.md)。
+---
 
-## 功能
+## ✨ 核心特性
 
-- 支持 Facebook、YouTube、Instagram、TikTok、Pinterest、Behance、Dribbble、Flickr。
-- 视频截图、自由框选、连续保存；分类和横排 / 竖排表格布局。
-- OCR.Space 图片识别、Groq Whisper 语音识别。
-- Groq `openai/gpt-oss-20b` 中文翻译；失败时降级到 Google 翻译。
-- 配置导入 / 导出；导出不包含 API Key。
+* **多平台支持**：Facebook · YouTube · Instagram · TikTok · Pinterest · Behance · Dribbble · Flickr
+* **双模截图**：🎥 一键捕获当前视频高清帧 / ✂️ 自由框选任意页面区域
+* **🎙️ 台词语音识别 (Whisper)**：
+  * 基于 Groq Whisper Large-v3 模型，一键将当前播放视频的语音转为文本台词；
+  * **2倍速静音加速提取**：自动静音并在保证高识别率的前提下将提取时间减半；
+  * **智能语言识别**：自动检测音频语种（英语、西班牙语、葡萄牙语、日语、中文等 40+ 语言），并带有专属国旗语言标签；
+  * **独立控制**：支持「⏮️ 从头识别」、「⏹️ 提前完成」、「🔄 重新提取」，并支持按链接本地缓存，避免重复消耗配额。
+* **🔍 OCR 图片文字提取**：
+  * 内置 OCR.Space 高精度文字识别引擎，截图后自动提取画面文字并智能整理断行；
+  * 支持免费公共测试 Key，亦支持绑定专属免费 Key（每月 25,000 次独立额度）。
+* **🌐 AI 整体翻译**：
+  * 支持 Groq Llama-3.1-8b 模型进行自然语义的整体中文翻译，无 Key 时无缝自动降级至免费 Google 翻译。
+* **🔐 GCP 服务账号 (JSON) 授权（受限文档专用）**：
+  * 完美支持导入 GCP Service Account JSON 凭证；
+  * 自动通过原生 RSA-SHA256 签名获取 Google 官方 OAuth2 Token；
+  * **解决 403 难题**：只需将服务账号邮箱加入表格/文件夹协作者，即使 Google 表格或云盘处于**完全受限（禁止公开）**状态，也能自动打通权限并安全读写。
+* **📁 自动云端归档**：按「日期 / 视频标题」自动创建层级文件夹存入 Google Drive。
+* **📊 表格实时同步**：自动将截图缩略图、日期、分类、随手记/台词、来源链接同步至 Google Sheets，支持横排与竖排两种排列模式。
+* **👥 团队协作与配置同步**：一键生成配置 JSON，团队成员粘贴即可一键同步全部参数，成员各用各表，数据完全隔离。
 
-## 安装与配置
+---
 
-### 1. 加载扩展
+## 🚀 安装部署指南
 
-1. 下载并解压源码，或解压 `dist/chrome-extension-2.1.zip`。
-2. 打开 `chrome://extensions`，开启“开发者模式”。
-3. 点击“加载已解压的扩展程序”，选择包含 `manifest.json` 的目录。
+### 第一步：安装 Chrome 扩展
 
-### 2. 部署 Google Apps Script
+1. 下载或克隆本项目文件夹至本地；
+2. 打开 Google Chrome 浏览器，在地址栏访问 `chrome://extensions`；
+3. 打开页面右上角的「**开发者模式 (Developer mode)**」；
+4. 点击左上角「**加载已解压的扩展程序**」，选择本项目的根目录；
+5. 浏览器工具栏出现 📸 图标即安装成功。
 
-1. 在 [Apps Script](https://script.google.com/) 新建项目，将 [apps_script.gs](apps_script.gs) 的内容粘贴到脚本编辑器。
-2. 选择“部署 → 新建部署 → Web 应用”。
-3. 当前实现使用“以我自己身份执行”和“所有人（含匿名用户）”访问方式。**这不构成用户隔离，接口本身也没有鉴权。** 不要处理敏感资料，建议每位使用者独立部署。
-4. 完成授权并复制 `https://script.google.com/macros/s/.../exec` 部署地址。
-5. 每次更新服务端脚本后，必须部署新版本，修改才会生效。
+---
 
-### 3. 填写扩展配置
+### 第二步：部署 Google Apps Script 后端
 
-点击工具栏扩展图标，填写 GAS 部署地址、表格 ID、网盘文件夹 ID，按需填写 Sheet 名称。
+1. 打开 [Google Apps Script 控制台](https://script.google.com)，点击「**新建项目**」；
+2. 清空编辑器默认代码，将本项目中的 [`apps_script.gs`](apps_script.gs) 全部内容完整粘贴进去；
+3. 点击右上角「**部署 → 新建部署**」：
+   * **部署类型**：选择「**Web 应用**」；
+   * **说明**：可填写 `v2.2`；
+   * **执行身份**：选择「**以我自己身份执行**」；
+   * **访问权限**：选择「**所有人（含匿名用户）**」（若使用受限表格，配合下方 GCP JSON 即可安全打通）；
+4. 点击「**部署**」（首次部署点击“高级 → 前往项目”允许授权）；
+5. 复制生成的 **Web 应用 URL**（以 `https://script.google.com/macros/s/.../exec` 结尾）。
 
-表格及文件夹必须允许 **GAS 部署者账号** 访问。填写别人的资源 ID 不会改变脚本执行身份。Groq / OCR.Space Key 在扩展的“OCR/AI”页自行填写，不要提交到仓库或发到 Issue。
+---
 
-打开支持的平台并刷新页面，使用右侧悬浮按钮截图或提取台词。`tabCapture` 语音兜底受浏览器用户激活和流消费权限限制，仍需真实浏览器验证。
+### 第三步：配置插件
 
-## 数据去向
+点击浏览器工具栏 📸 图标打开插件面板：
 
-| 操作 | 接收方 |
-| --- | --- |
-| 图片 OCR | OCR.Space |
-| 视频语音转文字 | Groq |
-| 文字翻译 | Groq；失败时 Google 翻译；没有 Groq Key 时直接使用 Google 翻译 |
-| 保存截图及记录 | GAS 部署者可访问的 Google Drive / Sheets |
+#### 1.「⚙️ 配置」页面：
+| 配置项 | 填写说明 |
+|---|---|
+| **GAS 部署链接** | 粘贴第二步获取的 Web 应用 URL（必须以 `/exec` 结尾） |
+| **谷歌表格 ID** | 直接粘贴目标 Google 表格的完整网页网址即可，插件会自动提取 ID |
+| **Sheet 名称** | 留空写入第一个工作表，或指定填入的工作表标签名称（区分大小写） |
+| **网盘文件夹 ID** | 直接粘贴目标 Google Drive 文件夹的完整链接即可 |
 
-当前默认打开截图弹窗即自动 OCR。上传图片会尝试设为“知道链接的任何人可查看”。预览、台词和备注显示在宿主网页 DOM 中，页面脚本可能读取。完整边界见 [安全说明](SECURITY.md)。
+#### 2.「🔐 GCP 凭证 (JSON) 授权」（受限表格/网盘推荐）：
+如果您的表格或网盘属于组织/私密受限文档：
+1. 点击「**📂 选择 JSON 文件**」导入您的 GCP 服务账号凭证文件（或点击粘贴 JSON）；
+2. 绑定成功后，点击「**📋 复制服务账号邮箱**」；
+3. 打开受限的 Google 表格和网盘根文件夹，点击右上角「**共享**」，将该邮箱添加为「**编辑器 (Editor)**」并保存即可。
 
-## 开发、测试与打包
+#### 3.「🔍 OCR/AI」页面（可选）：
+* **Groq API Key**：填入 Groq 免费申请的 Key（`gsk_...`），用于驱动 Whisper 视频语音识别与 Llama-3.1 AI 翻译；
+* **OCR.Space API Key**：留空使用公共 Key，或到 [ocr.space/ocrapi/freekey](https://ocr.space/ocrapi/freekey) 免费获取专属 Key。
 
-要求 Node.js 22 或更高版本。**没有第三方 npm 包依赖，无需运行 `npm install`。**
+---
 
-```sh
-npm run check
-npm test
-npm run build
-```
+### 第四步：开始使用
 
-不使用 npm 时，可直接运行对应命令：
+1. 打开任意支持的视频页面（如 Facebook Reels、YouTube 视频）并**刷新页面**；
+2. 页面右侧将出现悬浮快捷工具栏：
+   * 🎥 **截取视频**：捕获当前视频画面帧，自动识别文字与台词；
+   * ✂️ **框选截图**：十字光标自由框选屏幕任意区域；
+   * 🎙️ **提取台词**：独立转写当前视频音频，并自动翻译与复制。
+3. 在保存弹窗中选择分类标签，可填写灵感备注或一键填入台词，点击「**上传**」或「**连续截图**」即可自动同步至 Google 云端。
 
-```sh
-node scripts/check.cjs
-node --test tests/security.test.cjs
-node scripts/build.cjs
-```
+---
 
-构建产物：
+## 🎛️ 布局与进阶功能
 
-| 文件 | 用途 |
-| --- | --- |
-| `dist/chrome-extension-2.1.zip` | 仅包含 7 个扩展运行文件；解压后加载，也可作为扩展分发包 |
-| `dist/github-source-2.1.zip` | 完整源码、GAS、说明、测试及 CI，适合分享或上传 GitHub |
-| `dist/SHA256SUMS.txt` | 两个 ZIP 的 SHA-256 校验值 |
+### 排列布局模式
 
-构建采用固定文件清单，原始归档、私人配置、测试日志和构建目录不会被打入源码包。ZIP 只包含所需的运行文件，不代表已通过 Chrome Web Store 审核。
+* **横排模式（默认）**：相同分类的内容从左向右横向扩展记录，适合横向对比同类素材。
+* **竖排模式**：最新截图插入在最上方，旧数据自动向下平移，适合按时间倒序流水浏览。
 
-28 项测试是离线测试，Chrome API、DOM、GAS 使用模拟对象。实际账号权限、翻译费用与效果、图片分享和真实浏览器操作仍需联调。
+### 团队协同分享
 
-## 上传 GitHub
+1. 管理员配置完毕后，进入插件「**📦 导出**」标签页；
+2. 点击「**生成配置**」$\rightarrow$「**⚡ 复制配置**」；
+3. 团队成员安装插件后，进入「**📦 导出**」页面的「**📥 导入配置**」框中粘贴并点击「**⚡ 应用配置**」，即可一秒完成环境同步。
 
-新建仓库，上传本目录的源码文件及 `.github` 等隐藏文件；不要把 ZIP 当成源码唯一文件上传。也可用 Git：
+---
 
-```sh
-git init
-git add .
-git commit -m "Prepare audited screenshot assistant project"
-git branch -M main
-git remote add origin https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git
-git push -u origin main
-```
-
-先替换示例仓库地址。`.gitignore` 已忽略本地凭据、导出配置、`node_modules` 和 `dist`。如启用 CI，推送或 PR 会执行检查、测试和构建；CI 没有部署步骤，不需要 API Key。
-
-## 项目结构
+## 📁 项目文件架构
 
 ```text
-manifest.json / background.js / content.js / content.css
-popup.html / popup.js / icon.png   Chrome 扩展运行文件
-apps_script.gs                   Google Apps Script 服务端
-tests/security.test.cjs           安全回归测试
-scripts/check.cjs                 语法和清单检查
-scripts/build.cjs                 可复现 ZIP 构建
-.github/workflows/ci.yml          检查、测试、构建
-SECURITY.md                       当前安全边界
-CHANGELOG.md                      本轮改动
+├── manifest.json       # Chrome 扩展清单规范 (Manifest V3)
+├── background.js       # Service Worker：截图捕获、网络代理、OCR与语音转写调度
+├── content.js          # 页面交互引擎：悬浮工具栏、框选截取、视频音频变速录制与弹窗
+├── content.css         # 悬浮工具栏、全屏截图选择器与台词播放条样式
+├── popup.html          # 扩展配置面板、OCR/AI设置、分类管理与GCP授权界面
+├── popup.js            # 扩展弹窗控制逻辑与配置导入导出
+├── apps_script.gs      # Google Apps Script 后端服务（驱动表格写入与云盘归档）
+├── icon.png            # 扩展应用图标
+├── .gitignore          # Git 忽略配置（防泄露私钥与临时文件）
+└── README.md           # 项目详细说明文档
 ```
 
-## 许可证
+---
 
-沿用原项目声明的 [MIT License](LICENSE)。
+## 📄 开源许可证
+
+本项目基于 [MIT License](LICENSE) 开源发布，欢迎自由使用、优化与分发。

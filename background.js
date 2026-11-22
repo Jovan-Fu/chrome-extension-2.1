@@ -1,107 +1,21 @@
-// 消息统一校验后分派；同步返回 true 以保留异步响应通道。
-const SUPPORTED_HOSTS = ["facebook.com", "youtube.com", "instagram.com", "tiktok.com",
-  "pinterest.com", "pinterest.co.uk", "behance.net", "dribbble.com", "flickr.com"];
-
-function isTrustedSender(sender) {
-  if (sender.id !== chrome.runtime.id || !sender.tab || sender.frameId !== 0) return false;
-  try {
-    const url = new URL(sender.url);
-    return url.protocol === "https:" && SUPPORTED_HOSTS.some(host =>
-      url.hostname === host || url.hostname.endsWith("." + host));
-  } catch { return false; }
-}
-
-function isGASUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.origin === "https://script.google.com" && !url.username && !url.password &&
-      !url.search && !url.hash && /^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url.pathname);
-  } catch { return false; }
-}
-
-function validRequest(request) {
-  if (!request || typeof request !== "object" || Array.isArray(request)) return false;
-  const bounded = (value, max) => typeof value === "string" && value.length > 0 && value.length <= max;
-  switch (request.action) {
-    case "captureTab": case "getTabStreamId": case "getAIConfig": return true;
-    case "translateText": return bounded(request.text, 50000);
-    case "recognizeText": return bounded(request.imageBase64, 14 * 1024 * 1024) &&
-      /^(?:data:image\/(?:jpeg|png);base64,)?[A-Za-z0-9+/]+={0,2}$/.test(request.imageBase64);
-    case "transcribeAudio": return bounded(request.audioBase64, 34 * 1024 * 1024) &&
-      /^data:audio\/(?:webm|ogg|mp4|mpeg|wav)(?:;codecs=[a-z0-9,.-]+)?;base64,[A-Za-z0-9+/]+={0,2}$/i.test(request.audioBase64);
-    case "uploadToGAS": return isGASUrl(request.gasUrl) && request.payload &&
-      typeof request.payload === "object" && !Array.isArray(request.payload) &&
-      JSON.stringify(request.payload).length <= 15 * 1024 * 1024;
-    default: return false;
-  }
-}
-
-async function fetchWithTimeout(url, options = {}) {
-  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(60000),
-    credentials: "omit", referrerPolicy: "no-referrer" });
-  if (!response.ok) throw new Error("服务请求失败（HTTP " + response.status + "）");
-  return response;
-}
-
+// ── 所有消息统一在同一个监听器里处理 ────────────────────────────────────
+// Chrome MV3 规则：只要其中一个 if 分支返回 true，通道才保持开放。
+// 多个独立监听器时，第一个不认识的 action 就会关闭通道，后续监听器无法响应。
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-  if (!isTrustedSender(sender) || !validRequest(request)) {
-    sendResponse({ success: false, status: "error", error: "请求来源或参数无效" });
-    return false;
-  }
-  chrome.storage.local.get(["gasUrl", "sheetId", "folderId", "sheetName", "visionKey", "groqKey"], cfg => {
-    if (chrome.runtime.lastError) {
-      sendResponse({ success: false, status: "error", error: "读取配置失败" });
-      return;
-    }
-    if (request.action === "getAIConfig") {
-      sendResponse({ hasGroqKey: typeof cfg.groqKey === "string" && !!cfg.groqKey.trim() });
-      return;
-    }
-    if (request.action === "uploadToGAS") {
-      if (request.gasUrl !== cfg.gasUrl || !isGASUrl(cfg.gasUrl)) {
-        sendResponse({ status: "error", message: "上传地址与已配置的 GAS 地址不一致" });
-        return;
-      }
-      request = { ...request, payload: { ...request.payload,
-        sheetId: cfg.sheetId, folderId: cfg.folderId, sheetName: cfg.sheetName || "" } };
-    }
-    try {
-      handleRequest({ ...request, groqKey: typeof cfg.groqKey === "string" ? cfg.groqKey : "",
-        apiKey: typeof cfg.visionKey === "string" ? cfg.visionKey : "" }, sender, sendResponse);
-    } catch {
-      sendResponse({ success: false, status: "error", error: "请求处理失败" });
-    }
-  });
-  return true;
-});
-
-function handleRequest(request, sender, sendResponse) {
 
   // ── 截图 ────────────────────────────────────────────────────────────
   if (request.action === "captureTab") {
     try {
-      chrome.tabs.query({ active: true, windowId: sender.tab.windowId }, function(tabs) {
-        if (chrome.runtime.lastError || tabs[0]?.id !== sender.tab.id || tabs[0]?.url !== sender.url) {
-          sendResponse({ success: false, error: "请保持发起截图的页面处于当前窗口的活动标签" });
+      chrome.tabs.captureVisibleTab({ format: "png" }, function(dataUrl) {
+        if (chrome.runtime.lastError) {
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
           return;
         }
-        chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: "png" }, function(dataUrl) {
-          if (chrome.runtime.lastError) {
-            sendResponse({ success: false, error: chrome.runtime.lastError.message });
-            return;
-          }
-          if (!dataUrl) {
-            sendResponse({ success: false, error: "截图数据为空" });
-            return;
-          }
-          chrome.tabs.query({ active: true, windowId: sender.tab.windowId }, function(currentTabs) {
-            if (chrome.runtime.lastError || currentTabs[0]?.id !== sender.tab.id || currentTabs[0]?.url !== sender.url) {
-              sendResponse({ success: false, error: "截图期间标签页发生变化，请重试" });
-              return;
-            }
-            sendResponse({ success: true, dataUrl: dataUrl });
-          });
-        });
+        if (!dataUrl) {
+          sendResponse({ success: false, error: "截图数据为空" });
+          return;
+        }
+        sendResponse({ success: true, dataUrl: dataUrl });
       });
     } catch (err) {
       sendResponse({ success: false, error: "捕获异常：" + err.toString() });
@@ -112,7 +26,7 @@ function handleRequest(request, sender, sendResponse) {
   // ── 上传到 Google Apps Script ────────────────────────────────────────
   if (request.action === "uploadToGAS") {
     try {
-      fetchWithTimeout(request.gasUrl, {
+      fetch(request.gasUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request.payload)
@@ -128,7 +42,7 @@ function handleRequest(request, sender, sendResponse) {
               message: "Google 拦截了请求（返回网页）：请检查 1. GAS 部署权限是否设为「所有人（Anyone）」；2. 链接末尾是否为 /exec；3. GAS 是否需要重新授权"
             };
           }
-          return { status: "error", message: "服务端返回了无效的数据格式" };
+          return { status: "error", message: "服务端异常返回：" + text.substring(0, 100) };
         }
       })
       .then(function(data) { sendResponse(data); })
@@ -161,14 +75,14 @@ function handleRequest(request, sender, sendResponse) {
 
     if (groqKey) {
       // ── Groq AI 翻译 ──────────────────────────────────────────────
-      fetchWithTimeout("https://api.groq.com/openai/v1/chat/completions", {
+      fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type":  "application/json",
           "Authorization": "Bearer " + groqKey
         },
         body: JSON.stringify({
-          model: "openai/gpt-oss-20b",
+          model: "llama-3.1-8b-instant",
           messages: [
             {
               role: "system",
@@ -177,9 +91,7 @@ function handleRequest(request, sender, sendResponse) {
             { role: "user", content: text }
           ],
           temperature: 0.2,
-          max_completion_tokens: 2048,
-          reasoning_effort: "low",
-          include_reasoning: false
+          max_tokens: 2048
         })
       })
       .then(r => r.json())
@@ -223,11 +135,16 @@ function handleRequest(request, sender, sendResponse) {
       fd.append("detectOrientation", "true");
       fd.append("scale",             "true");
       fd.append("OCREngine",         String(engine));
-      return fetchWithTimeout("https://api.ocr.space/parse/image", {
+      return fetch("https://api.ocr.space/parse/image", {
         method: "POST",
         headers: { "apikey": key },
         body: fd
-      }).then(r => r.json());
+      }).then(r => {
+        if (r.status === 429) {
+          throw new Error("429: 请求过于频繁");
+        }
+        return r.json();
+      });
     }
 
     // 优先 Engine 选择：helloworld → 直接用 1；有注册 Key → 先试 2，失败降级到 1
@@ -235,6 +152,7 @@ function handleRequest(request, sender, sendResponse) {
 
     doOCR(preferred)
       .then(data => {
+        console.log("[OCR] engine=" + preferred + " response:", JSON.stringify(data).substring(0, 300));
 
         // Engine 2 失败或无结果时自动降级到 Engine 1
         const isEmpty = !data.ParsedResults || data.ParsedResults.length === 0 ||
@@ -246,6 +164,7 @@ function handleRequest(request, sender, sendResponse) {
         return data;
       })
       .then(data => {
+        console.log("[OCR] final response:", JSON.stringify(data).substring(0, 300));
 
         if (data.IsErroredOnProcessing) {
           const errMsg = (data.ErrorMessage && data.ErrorMessage[0]) || "识别失败";
@@ -290,7 +209,15 @@ function handleRequest(request, sender, sendResponse) {
       })
       .catch(err => {
         console.error("[OCR] 网络错误:", err);
-        sendResponse({ success: false, error: "网络错误：" + err.toString() });
+        const errMsg = err.toString();
+        if (errMsg.includes("429")) {
+          sendResponse({
+            success: false,
+            error: "OCR 过于频繁(429)：请等10秒后再试；若未配置专属Key，请在「🔍 OCR/AI」中填入"
+          });
+        } else {
+          sendResponse({ success: false, error: "网络错误：" + errMsg });
+        }
       });
 
     return true; // 保持异步通道
@@ -324,7 +251,7 @@ function handleRequest(request, sender, sendResponse) {
       formData.append("response_format", "verbose_json");
       formData.append("temperature", "0");
 
-      fetchWithTimeout("https://api.groq.com/openai/v1/audio/transcriptions", {
+      fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
         method: "POST",
         headers: {
           "Authorization": "Bearer " + groqKey
@@ -336,7 +263,8 @@ function handleRequest(request, sender, sendResponse) {
         if (data.text) {
           sendResponse({ success: true, text: data.text.trim(), language: data.language || "" });
         } else {
-          sendResponse({ success: false, error: "Whisper 识别失败，请检查额度与音频格式" });
+          const errMsg = data.error?.message || JSON.stringify(data);
+          sendResponse({ success: false, error: "Whisper 识别失败：" + errMsg });
         }
       })
       .catch(err => sendResponse({ success: false, error: "语音识别网络异常：" + err.toString() }));
@@ -363,7 +291,7 @@ function handleRequest(request, sender, sendResponse) {
     return true;
   }
 
-}
+});
 
 // ── Google Translate 免费接口辅助函数 ────────────────────────────────────
 // 使用 translate.googleapis.com/translate_a/single（无需 Key，自动检测语言，翻译为中文）
@@ -383,7 +311,7 @@ function fallbackGoogleTranslate(text, sendResponse) {
     }
     const url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=" +
                 encodeURIComponent(chunks[idx]);
-    fetchWithTimeout(url)
+    fetch(url)
       .then(r => r.json())
       .then(data => {
         const part = data[0].map(item => item[0] || "").join("");

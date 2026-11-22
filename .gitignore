@@ -1,0 +1,9 @@
+.DS_Store
+Thumbs.db
+*.zip
+*.7z
+*.tar.gz
+*.log
+node_modules/
+*service_account*.json
+credentials.json

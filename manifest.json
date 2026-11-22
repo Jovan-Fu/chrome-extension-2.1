@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "智能截图助手 Pro",
-  "version": "2.1",
-  "description": "支持 Facebook、YouTube、Instagram、TikTok、Pinterest 等多平台一键截图，自动保存至 Google Drive 并同步 Google Sheets",
+  "version": "2.2",
+  "description": "支持多平台一键截图、台词语音识别(Whisper)、OCR 文字识别与 AI 翻译，自动保存至 Google Drive 并同步 Google Sheets（支持 GCP 服务账号访问受限文档）",
   "permissions": [
     "activeTab",
+    "scripting",
     "storage",
     "tabCapture"
   ],
@@ -41,12 +42,8 @@
         "https://*.dribbble.com/*",
         "https://*.flickr.com/*"
       ],
-      "js": [
-        "content.js"
-      ],
-      "css": [
-        "content.css"
-      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
       "run_at": "document_idle"
     }
   ],

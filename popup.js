@@ -22,7 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const ALL_KEYS = ["gasUrl","sheetId","sheetName","folderId","categories",
                     "layoutMode","optDownload","optFolder","optNotes","optUrl","ocrAutoCheck",
-                    "catDateMode","speechDuration"];
+                    "catDateMode","speechDuration","serviceAccount"];
 
   function showStatus(text, color = "green") {
     statusMsg.textContent = text;
@@ -69,6 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (durationSelect) durationSelect.value = String(data.speechDuration || 60);
     setLayout(data.layoutMode || "horizontal", false);
     renderCategories(data.categories || ["默认","灵感素材","竞品分析","视频剪辑"]);
+    renderServiceAccount(data.serviceAccount);
   });
 
   // 实时保存
@@ -118,7 +119,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function addCategory() {
     const val = newCatInput.value.trim();
     if (!val) return;
-    if (val.length > 200 || /[|\r\n]/.test(val)) { showStatus("分类最长 200 字，不能包含换行或竖线", "#d93025"); return; }
     chrome.storage.local.get(["categories"], (data) => {
       let list = data.categories || ["默认","灵感素材","竞品分析","视频剪辑"];
       if (!list.includes(val)) {
@@ -149,7 +149,7 @@ document.addEventListener("DOMContentLoaded", () => {
   exportBtn.addEventListener("click", () => {
     chrome.storage.local.get(ALL_KEYS, (data) => {
       const config = {
-        _note:       "智能截图助手 Pro v2.1 配置 — " + new Date().toLocaleString("zh-CN"),
+        _note:       "智能截图助手 Pro v2.2 配置 — " + new Date().toLocaleString("zh-CN"),
         gasUrl:      data.gasUrl      || "",
         sheetId:     data.sheetId     || "",
         sheetName:   data.sheetName   || "",
@@ -161,6 +161,7 @@ document.addEventListener("DOMContentLoaded", () => {
         optNotes:    data.optNotes    !== false,
         optUrl:      data.optUrl      !== false
       };
+      if (data.serviceAccount) config.serviceAccount = data.serviceAccount;
       exportArea.value = JSON.stringify(config, null, 2);
       showStatus("✅ 配置已生成，点「复制配置」发给好友");
     });
@@ -188,9 +189,18 @@ document.addEventListener("DOMContentLoaded", () => {
     try { config = JSON.parse(raw); }
     catch(e) { showStatus("❌ JSON 格式错误，请检查", "#d93025"); return; }
 
-    let toSave;
-    try { toSave = validateImportedConfig(config); }
-    catch (error) { showStatus("❌ " + error.message, "#d93025"); return; }
+    const toSave = {};
+    if (config.gasUrl)                         toSave.gasUrl      = config.gasUrl;
+    if (config.sheetId)                        toSave.sheetId     = config.sheetId;
+    if (config.sheetName !== undefined)        toSave.sheetName   = config.sheetName;
+    if (config.folderId)                       toSave.folderId    = config.folderId;
+    if (config.categories)                     toSave.categories  = config.categories;
+    if (config.layoutMode)                     toSave.layoutMode  = config.layoutMode;
+    if (typeof config.optDownload === "boolean") toSave.optDownload = config.optDownload;
+    if (typeof config.optFolder   === "boolean") toSave.optFolder   = config.optFolder;
+    if (typeof config.optNotes    === "boolean") toSave.optNotes    = config.optNotes;
+    if (typeof config.optUrl      === "boolean") toSave.optUrl      = config.optUrl;
+    if (config.serviceAccount)                   toSave.serviceAccount = config.serviceAccount;
 
     chrome.storage.local.set(toSave, () => {
       if (toSave.gasUrl)    gasInput.value       = toSave.gasUrl;
@@ -203,10 +213,120 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeof toSave.optFolder   === "boolean") optFolder.checked   = toSave.optFolder;
       if (typeof toSave.optNotes    === "boolean") optNotes.checked    = toSave.optNotes;
       if (typeof toSave.optUrl      === "boolean") optUrl.checked      = toSave.optUrl;
+      if (toSave.serviceAccount !== undefined) renderServiceAccount(toSave.serviceAccount);
       importArea.value = "";
       showStatus("✅ 配置导入成功！请刷新目标网页生效");
     });
   });
+
+  // ── GCP 服务账号 JSON 处理 ─────────────────────────────────
+  const saStatusBadge   = document.getElementById("sa-status-badge");
+  const saEmptyView     = document.getElementById("sa-empty-view");
+  const saActiveView    = document.getElementById("sa-active-view");
+  const saFileInput     = document.getElementById("sa-file-input");
+  const saPasteToggleBtn= document.getElementById("sa-paste-toggle-btn");
+  const saPasteContainer= document.getElementById("sa-paste-container");
+  const saPasteArea     = document.getElementById("sa-paste-area");
+  const saSavePasteBtn  = document.getElementById("sa-save-paste-btn");
+  const saCancelPasteBtn= document.getElementById("sa-cancel-paste-btn");
+  const saRemoveBtn     = document.getElementById("sa-remove-btn");
+  const saEmailText     = document.getElementById("sa-email-text");
+  const saCopyEmailBtn  = document.getElementById("sa-copy-email-btn");
+
+  function renderServiceAccount(sa) {
+    if (sa && (sa.client_email || sa.client_id)) {
+      saEmptyView.style.display = "none";
+      saActiveView.style.display = "block";
+      saEmailText.textContent = sa.client_email || sa.client_id;
+      saStatusBadge.textContent = "已配置";
+      saStatusBadge.style.background = "#e6f4ea";
+      saStatusBadge.style.color = "#137333";
+    } else {
+      saEmptyView.style.display = "block";
+      saActiveView.style.display = "none";
+      if (saPasteContainer) saPasteContainer.style.display = "none";
+      if (saPasteArea) saPasteArea.value = "";
+      saStatusBadge.textContent = "未配置";
+      saStatusBadge.style.background = "#e4e6eb";
+      saStatusBadge.style.color = "#65676b";
+    }
+  }
+
+  function handleSaveSAJson(rawText) {
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText.trim());
+    } catch(e) {
+      showStatus("❌ JSON 格式无效，请检查", "#d93025");
+      return;
+    }
+    if (!parsed.client_email && !parsed.private_key) {
+      showStatus("❌ 缺少 client_email 或 private_key，请使用正确的 GCP 服务账号 JSON", "#d93025");
+      return;
+    }
+    chrome.storage.local.set({ serviceAccount: parsed }, () => {
+      renderServiceAccount(parsed);
+      showStatus("✅ 服务账号已绑定，请复制邮箱并在受限表格添加协作者");
+    });
+  }
+
+  if (saFileInput) {
+    saFileInput.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        handleSaveSAJson(evt.target.result);
+        saFileInput.value = "";
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  if (saPasteToggleBtn) {
+    saPasteToggleBtn.addEventListener("click", () => {
+      const isShow = saPasteContainer.style.display !== "none";
+      saPasteContainer.style.display = isShow ? "none" : "block";
+      if (!isShow) saPasteArea.focus();
+    });
+  }
+
+  if (saCancelPasteBtn) {
+    saCancelPasteBtn.addEventListener("click", () => {
+      saPasteContainer.style.display = "none";
+      saPasteArea.value = "";
+    });
+  }
+
+  if (saSavePasteBtn) {
+    saSavePasteBtn.addEventListener("click", () => {
+      const text = saPasteArea.value.trim();
+      if (!text) { showStatus("⚠️ 请先粘贴 JSON 内容", "#d93025"); return; }
+      handleSaveSAJson(text);
+    });
+  }
+
+  if (saRemoveBtn) {
+    saRemoveBtn.addEventListener("click", () => {
+      if (!confirm("确定移除此 GCP 服务账号凭据吗？")) return;
+      chrome.storage.local.remove("serviceAccount", () => {
+        renderServiceAccount(null);
+        showStatus("🗑️ 服务账号凭据已移除");
+      });
+    });
+  }
+
+  if (saCopyEmailBtn) {
+    saCopyEmailBtn.addEventListener("click", () => {
+      const email = saEmailText.textContent.trim();
+      if (!email) return;
+      navigator.clipboard.writeText(email).then(() => {
+        showStatus("📋 邮箱已复制到剪贴板，请到受限表格添加为协作者！");
+        saCopyEmailBtn.textContent = "✓ 已复制邮箱";
+        setTimeout(() => { saCopyEmailBtn.textContent = "📋 复制服务账号邮箱"; }, 1500);
+      });
+    });
+  }
 });
 
 // ── OCR 配置与额度 ────────────────────────────────────────────
@@ -315,40 +435,3 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 })();
 
-
-// 导入只接受已知字段及其预期类型，防止损坏配置与后台请求目标污染。
-function validateImportedConfig(config) {
-  if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("配置必须为 JSON 对象");
-  const saved = {};
-  const limits = { gasUrl: 2048, sheetId: 2048, sheetName: 100, folderId: 2048 };
-  for (const [name, max] of Object.entries(limits)) {
-    if (Object.hasOwn(config, name)) {
-      if (typeof config[name] !== "string" || config[name].length > max) throw new Error("字段格式无效：" + name);
-      saved[name] = config[name].trim();
-    }
-  }
-  if (saved.gasUrl) {
-    let url;
-    try { url = new URL(saved.gasUrl); } catch { throw new Error("GAS 地址格式无效"); }
-    if (url.origin !== "https://script.google.com" || url.username || url.password || url.search || url.hash ||
-        !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url.pathname)) throw new Error("仅允许正式的 HTTPS GAS 部署地址");
-  }
-  if (Object.hasOwn(config, "categories")) {
-    if (!Array.isArray(config.categories) || config.categories.length > 500 ||
-        config.categories.some(c => typeof c !== "string" || !c.trim() || c.length > 200 || /[|\r\n]/.test(c))) {
-      throw new Error("分类必须为最多 500 项的文本数组，不能包含换行或竖线");
-    }
-    saved.categories = [...new Set(config.categories.map(c => c.trim()))];
-  }
-  if (Object.hasOwn(config, "layoutMode")) {
-    if (!["horizontal", "vertical"].includes(config.layoutMode)) throw new Error("排列方式无效");
-    saved.layoutMode = config.layoutMode;
-  }
-  for (const name of ["optDownload", "optFolder", "optNotes", "optUrl"]) {
-    if (Object.hasOwn(config, name)) {
-      if (typeof config[name] !== "boolean") throw new Error("选项必须为布尔值：" + name);
-      saved[name] = config[name];
-    }
-  }
-  return saved;
-}
