@@ -7,3 +7,10 @@ Thumbs.db
 node_modules/
 *service_account*.json
 credentials.json
+dist/
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
+config-export*.json

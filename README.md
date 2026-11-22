@@ -1,5 +1,40 @@
 # 📸 智能截图助手 Pro v2.2
 
+## 下载 v2.2 安装包
+
+朋友安装请到 [v2.2 Release](https://github.com/Jovan-Fu/chrome-extension-2.1/releases/tag/v2.2)，下载 **chrome-extension-2.2.zip**，解压后在 `chrome://extensions` 中“加载已解压的扩展程序”。不要把 GitHub 自动生成的 Source code ZIP 当成专用安装包；安装包内有单独的安装说明。
+
+本版保留原始 v2.2 的服务账号和好友共用素材库方式，未合入 v2.3.0。私下分享的团队配置不包含在下载包中。
+
+### 仓库哪些文件会运行
+
+| 文件 | 用途 | 朋友安装是否需要 |
+| --- | --- | --- |
+| manifest.json、background.js、content.js、content.css、popup.html、popup.js、icon.png | Chrome 扩展运行文件，共 7 个 | 需要，安装 ZIP 已包含 |
+| LICENSE、安装说明.txt | 许可证与安装说明 | 安装 ZIP 已附带 |
+| apps_script.gs | Google Apps Script 后端 | 由管理员部署；朋友共用已有后端时无需部署 |
+| README.md、SECURITY.md、CHANGELOG.md | 使用与版本说明 | 可阅读，不参与扩展执行 |
+| package.json、check.cjs、build.cjs、release.test.cjs | 当前 v2.2 开发检查和打包 | 不需要，也不会自动执行 |
+| archive/v2.1/ | 旧测试、旧 CI 与误命名配置的历史归档 | 不需要，不参与当前检查或运行 |
+
+旧测试与打包工具不是扩展依赖，不必为安装保留。归档它们用于保留历史；当前工具已修正根目录路径、2.2 版本号和打包清单，避免误套用旧脚本报错。扩展运行文件和后端源码没有因此变动。
+
+### 开发检查与打包
+
+使用 Node.js 22 或更高版本，无需安装第三方依赖：
+
+```sh
+npm run check
+npm test
+npm run build
+```
+
+产物位于 dist/：chrome-extension-2.2.zip 为安装包；github-source-2.2.zip 为完整源码包；SHA256SUMS.txt 为校验值。安装包不会包含后端、历史脚本、个人配置、私钥或 API Key。
+
+这些检查验证语法、资源完整性、配置界面引用与发布结构，不是已知安全问题已经修复的证明。实际 Google 账号和浏览器操作仍需自行联调。
+
+---
+
 > 一款专为自媒体、运营与研究人员打造的高效素材采集神器：支持多平台一键视频截图、自由框选、台词语音识别 (Whisper)、图片文字提取 (OCR)、AI 智能翻译，自动归类上传至 Google Drive 并实时同步至 Google Sheets（全面支持 GCP 服务账号凭据，在受限表格与网盘下畅通无阻）。
 
 ---

@@ -5,12 +5,15 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = __dirname;
 const RUNTIME = ['manifest.json', 'background.js', 'content.js', 'content.css',
   'popup.html', 'popup.js', 'icon.png'];
+const INSTALL = [...RUNTIME, 'LICENSE', '安装说明.txt'];
 const SOURCE = [...RUNTIME, 'apps_script.gs', 'README.md', 'SECURITY.md', 'CHANGELOG.md',
-  'LICENSE', 'package.json', '.gitignore', '.gitattributes',
-  'scripts/check.cjs', 'scripts/build.cjs', 'tests/security.test.cjs', '.github/workflows/ci.yml'];
+  'LICENSE', '安装说明.txt', 'package.json', '.gitignore',
+  'check.cjs', 'build.cjs', 'release.test.cjs', 'archive/v2.1/README.md',
+  'archive/v2.1/security.test.cjs', 'archive/v2.1/ci.yml',
+  'archive/v2.1/download', 'archive/v2.1/download (1)'];
 
 function crc32(data) {
   let crc = 0xffffffff;
@@ -28,8 +31,7 @@ function zip(files, prefix = '') {
     const absolute = path.join(ROOT, file);
     const stat = fs.lstatSync(absolute);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Expected a regular source file: ' + file);
-    let data = fs.readFileSync(absolute);
-    if (!file.endsWith('.png')) data = Buffer.from(data.toString('utf8').replace(/\r\n?/g, '\n'));
+    const data = fs.readFileSync(absolute); // Preserve the original v2.2 bytes.
     if (data.length > 50 * 1024 * 1024) throw new Error('Unexpectedly large source file: ' + file);
     const name = Buffer.from(prefix + file, 'utf8');
     const compressed = zlib.deflateRawSync(data, { level: 9 });
@@ -81,7 +83,7 @@ if (!/^\d+(?:\.\d+){0,3}$/.test(version)) throw new Error('Invalid extension ver
 const output = path.join(ROOT, 'dist');
 fs.mkdirSync(output, { recursive: true });
 const artifacts = [
-  [`chrome-extension-${version}.zip`, zip(RUNTIME)],
+  [`chrome-extension-${version}.zip`, zip(INSTALL)],
   [`github-source-${version}.zip`, zip(SOURCE, 'screenshot-assistant-pro/')]
 ];
 const sums = [];

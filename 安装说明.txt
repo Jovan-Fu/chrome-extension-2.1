@@ -1,0 +1,14 @@
+智能截图助手 Pro v2.2 — 好友安装包
+
+1. 解压 chrome-extension-2.2.zip 到一个固定文件夹（不要直接打开 ZIP 安装）。
+2. 在 Chrome 地址栏打开 chrome://extensions，开启“开发者模式”。
+3. 点击“加载已解压的扩展程序”，选择包含 manifest.json 的解压目录。
+4. 停用旧版扩展，避免同一网页出现两套工具栏，然后刷新视频网页。
+5. 打开扩展配置面板，导入管理员私下发给你的配置；Groq/OCR Key 按需自行填写。
+
+本包包含 7 个运行文件、LICENSE 和本说明；不含私人配置、私钥或 API Key。
+无需运行 Node、npm、旧测试、构建脚本或 GitHub 自动生成的源码包。
+如果你们共用已有 GAS 后端，不要重复部署；由管理员确认后端已经更新为 v2.2。
+需要自己部署后端时，请查仓库 README.md 和 apps_script.gs。
+
+发布页：https://github.com/Jovan-Fu/chrome-extension-2.1/releases/tag/v2.2

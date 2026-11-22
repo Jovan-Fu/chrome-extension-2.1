@@ -1,6 +1,6 @@
 {
   "name": "screenshot-assistant-pro",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "description": "Chrome MV3 screenshot assistant with Google Apps Script backend",
   "license": "MIT",
@@ -8,8 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "node scripts/check.cjs",
-    "test": "node --test tests/security.test.cjs",
-    "build": "node scripts/build.cjs"
+    "check": "node check.cjs",
+    "test": "node --test release.test.cjs",
+    "build": "node build.cjs"
   }
 }
